@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
 
-
 import 'package:http/http.dart' as http;
 import 'package:weather_app/models/forecast.dart';
 import 'package:geolocator/geolocator.dart';
@@ -17,14 +16,13 @@ class WeatherForecastScreen extends StatefulWidget {
 
 class _WeatherForecastScreenState extends State<WeatherForecastScreen> {
   late Future<List<Forecast>> futureForecast;
+  String address = 'No location found';
 
   @override
   void initState() {
     super.initState();
     futureForecast = _getForecast();
   }
-
-  int _kelvinToCelsius(double kelvin) => (kelvin - 273.15).round();
 
   Future<Position> _determinePosition() async {
     bool serviceEnabled;
@@ -51,8 +49,32 @@ class _WeatherForecastScreenState extends State<WeatherForecastScreen> {
     return await Geolocator.getCurrentPosition();
   }
 
+  Future<String> _getAddressFromLatLon(double lat, double lon) async {
+    final String url =
+        'https://maps.googleapis.com/maps/api/geocode/json?latlng=$lat,$lon&key=AIzaSyBchtmnLnY8I2VwycHdhZGdY4V2qG86TAo';
+
+    final response = await http.get(Uri.parse(url));
+
+    if (response.statusCode == 200) {
+      final Map<String, dynamic> data = json.decode(response.body);
+
+      if (data['status'] == 'OK') {
+        String formattedAddress = data['results'][9]['formatted_address'];
+        return formattedAddress;
+      } else {
+        return 'No address found';
+      }
+    } else {
+      throw Exception('Failed to load address');
+    }
+  }
+
   Future<List<Forecast>> _getForecast() async {
     Position position = await _determinePosition();
+    address =
+        await _getAddressFromLatLon(position.latitude, position.longitude);
+
+    int _kelvinToCelsius(double kelvin) => (kelvin - 273.15).round();
 
     final Uri url = Uri.https('pro.openweathermap.org', '/data/2.5/forecast', {
       'lat': '${position.latitude}',
@@ -67,8 +89,10 @@ class _WeatherForecastScreenState extends State<WeatherForecastScreen> {
       List<Forecast> forecastList = [];
       for (int i = 0; i < 10; i++) {
         forecastList.add(Forecast(
-          maxTemp: _kelvinToCelsius(responseData['list'][i]['main']['temp_max']),
-          minTemp: _kelvinToCelsius(responseData['list'][i]['main']['temp_min']),
+          maxTemp:
+              _kelvinToCelsius(responseData['list'][i]['main']['temp_max']),
+          minTemp:
+              _kelvinToCelsius(responseData['list'][i]['main']['temp_min']),
           description: responseData['list'][i]['weather'][0]['description'],
           humidity: responseData['list'][i]['main']['humidity'],
         ));
@@ -96,21 +120,30 @@ class _WeatherForecastScreenState extends State<WeatherForecastScreen> {
               return Center(child: Text('Error: ${snapshot.error}'));
             } else if (snapshot.hasData) {
               final forecast = snapshot.data!;
-              return ListView.builder(
-                itemCount: forecast.length,
-                itemBuilder: (context, index) => ListTile(
-                  leading: forecast[index].weatherIcon,
-                  title: Row(
-                    children: [
-                      Text("${forecast[index].maxTemp}°"),
-                      const SizedBox(width: 4),
-                      Text("${forecast[index].minTemp}°",
-                          style: const TextStyle(color: Colors.grey)),
-                    ],
+              return Column(
+                children: [
+                  Text(
+                      "${address.split(',')[0]}, ${address.split(',')[1].replaceFirst('State of ', '')}"),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: forecast.length,
+                      itemBuilder: (context, index) => ListTile(
+                        leading: forecast[index].weatherIcon,
+                        title: Row(
+                          children: [
+                            Text("${forecast[index].maxTemp}°"),
+                            const SizedBox(width: 4),
+                            Text("${forecast[index].minTemp}°",
+                                style: const TextStyle(color: Colors.grey)),
+                          ],
+                        ),
+                        subtitle: Text(forecast[index].description),
+                        trailing:
+                            Text("Humidity: ${forecast[index].humidity}%"),
+                      ),
+                    ),
                   ),
-                  subtitle: Text(forecast[index].description),
-                  trailing: Text("Humidity: ${forecast[index].humidity}%"),
-                ),
+                ],
               );
             } else {
               return const Center(child: Text("No data available"));
